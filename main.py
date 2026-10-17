@@ -1,10 +1,25 @@
+import os
 import telebot
 from telebot import types
 import requests
 
-# التوكن الخاص بك
-TOKEN = '8963858897:AAE8SRUCJhTvlTj5_Lxz6RHncIMM5IxbDIQ'
+# ==========================================
+# 0. الإعدادات والتوكن والمدير
+# ==========================================
+# سحب التوكن من متغيرات البيئة (أو ضع التوكن مباشرة إن رغبت)
+TOKEN = os.getenv("BOT_TOKEN", "8963858897:AAE8SRUCJhTvlTj5_Lxz6RHncIMM5IxbDIQ")
 bot = telebot.TeleBot(TOKEN)
+
+# معرّف الإدارة الخاص بك
+ADMIN_ID = "320878111"
+
+# أسعار السوق المحلي الافتراضية
+local_rates = {
+    "sanaa_usd": 530.0,
+    "sanaa_sar": 140.0,
+    "aden_usd": 1900.0,
+    "aden_sar": 500.0
+}
 
 # ==========================================
 # 1. القاموس للتعرف على الأسئلة العربية
@@ -41,11 +56,10 @@ currencies_ar = {
     "الليرة التركية": "TRY", "ليرة تركية": "TRY",
     "البيزو المكسيكي": "MXN", "بيزو مكسيكي": "MXN",
     "الريال البرازيلي": "BRL", "ريال برازيلي": "BRL"
-    # (يمكنك إضافة المزيد هنا للتحويل المباشر)
 }
 
 # ==========================================
-# 2. قاعدة بيانات البحث (مخصصة لزر البحث)
+# 2. قاعدة بيانات البحث
 # ==========================================
 currency_search_db = [
     "🇺🇸 الولايات المتحدة (USA) | الدولار الأمريكي (Dollar) | الرمز: USD",
@@ -91,16 +105,24 @@ currency_search_db = [
 ]
 
 # ==========================================
-# 3. الدوال الأساسية
+# 3. دوال جلب الأسعار (عالمي + بينانس)
 # ==========================================
 def get_exchange_rate(base_currency, target_currency):
     try:
         url = f"https://api.exchangerate-api.com/v4/latest/{base_currency}"
-        response = requests.get(url)
+        response = requests.get(url, timeout=5)
         data = response.json()
         if target_currency in data['rates']:
             return data['rates'][target_currency]
         return None
+    except:
+        return None
+
+def get_crypto_price(symbol):
+    try:
+        url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
+        response = requests.get(url, timeout=5)
+        return float(response.json()['price'])
     except:
         return None
 
@@ -115,19 +137,50 @@ def extract_currencies_from_arabic(text):
         return found_currencies[0], found_currencies[1]
     return None, None
 
+# ==========================================
+# 4. أوامر البوت والترحيب
+# ==========================================
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     text = (
-        "مرحباً بك في بوت تحويل العملات! 💱\n\n"
-        "يمكنك سؤالي بطريقتين:\n"
-        "1. بالعربية: 'كم سعر الدولار مقابل السوم الاوزبكي؟'\n"
-        "2. بالإنجليزية: '1 USD TO UZS'\n\n"
-        "🌐 لمعرفة الرموز أو البحث عن عملة، اضغط على:\n/currencies"
+        "مرحباً بك في بوت الصرف والعملات! 💱\n\n"
+        "🔹 **التحويل المباشر:**\n"
+        "• عربي: 'كم سعر الدولار مقابل السوم الاوزبكي؟'\n"
+        "• إنجليزي: '100 USD TO SAR'\n\n"
+        "🔹 **القوائم والأسواق والبحث:**\n"
+        "اضغط على /currencies لعرض أسعار السوق المحلي، الكريبتو، والقوائم."
     )
     bot.reply_to(message, text)
 
 # ==========================================
-# 4. واجهة الأزرار التفاعلية
+# 5. لوحة تحكم الأدمن (تحديث الأسعار)
+# ==========================================
+@bot.message_handler(commands=['update'])
+def admin_update_rates(message):
+    if str(message.chat.id) != str(ADMIN_ID):
+        bot.reply_to(message, "❌ هذا الأمر مخصص لإدارة البوت فقط.")
+        return
+
+    try:
+        # الصيغة: /update sanaa_usd 535
+        parts = message.text.split()
+        if len(parts) != 3:
+            bot.reply_to(message, "⚠️ الصيغة:\n`/update المفتاح السعر`\n\nأمثلة:\n`/update sanaa_usd 535`\n`/update aden_sar 505`", parse_mode="Markdown")
+            return
+            
+        key = parts[1].lower()
+        new_price = float(parts[2])
+
+        if key in local_rates:
+            local_rates[key] = new_price
+            bot.reply_to(message, f"✅ تم تحديث السعر بنجاح:\n`{key}` = {new_price} ريال يمني", parse_mode="Markdown")
+        else:
+            bot.reply_to(message, "❌ المفتاح غير صحيح. الخيارات المتاحة:\n- `sanaa_usd`\n- `sanaa_sar`\n- `aden_usd`\n- `aden_sar`", parse_mode="Markdown")
+    except ValueError:
+        bot.reply_to(message, "❌ الرجاء كتابة السعر كأرقام فقط.")
+
+# ==========================================
+# 6. القوائم والأزرار التفاعلية
 # ==========================================
 @bot.message_handler(commands=['currencies'])
 def show_currencies_menu(message):
@@ -135,19 +188,28 @@ def show_currencies_menu(message):
 
 def send_main_menu(chat_id, message_id=None):
     markup = types.InlineKeyboardMarkup(row_width=2)
+    
+    # أزرار السوق المحلي والكريبتو
+    btn_yemen = types.InlineKeyboardButton("🇾🇪 أسعار السوق المحلي (اليمن)", callback_data="local_yemen")
+    btn_crypto = types.InlineKeyboardButton("💎 أسعار الكريبتو (Binance)", callback_data="crypto_prices")
+    
+    # أزرار القارات
     btn1 = types.InlineKeyboardButton("🌍 أهم العملات", callback_data="cat_world")
     btn2 = types.InlineKeyboardButton("🦅 الدول العربية", callback_data="cat_arab")
     btn3 = types.InlineKeyboardButton("🌏 آسيا", callback_data="cat_asia")
     btn4 = types.InlineKeyboardButton("💶 أوروبا", callback_data="cat_europe")
     btn5 = types.InlineKeyboardButton("🌍 أفريقيا", callback_data="cat_africa")
-    btn6 = types.InlineKeyboardButton("🌎 الأمريكيتين وأوقيانوسيا", callback_data="cat_americas")
-    # الزر الجديد للبحث
+    btn6 = types.InlineKeyboardButton("🌎 الأمريكيتين", callback_data="cat_americas")
+    
+    # زر البحث
     search_btn = types.InlineKeyboardButton("🔍 بحث عن دولة أو عملة", callback_data="search_currency")
     
+    markup.add(btn_yemen)
+    markup.add(btn_crypto)
     markup.add(btn1, btn2, btn3, btn4, btn5, btn6)
-    markup.add(search_btn) # إضافته في سطر منفصل بالأسفل
+    markup.add(search_btn)
 
-    text = "📊 **دليل العملات الشامل:**\n\nالرجاء اختيار القارة، أو استخدام زر البحث:"
+    text = "📊 **دليل الصرف والعملات الشامل:**\n\nاختر من الأقسام التالية للاستعلام المباشر أو البحث:"
     
     if message_id:
         bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, reply_markup=markup, parse_mode="Markdown")
@@ -155,14 +217,12 @@ def send_main_menu(chat_id, message_id=None):
         bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
 
 # ==========================================
-# 5. معالجة الضغط على الأزرار ونظام البحث
+# 7. معالجة الضغط على الأزرار
 # ==========================================
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
-    # إذا ضغط المستخدم على زر البحث
     if call.data == "search_currency":
-        msg = bot.send_message(call.message.chat.id, "🔍 **البحث نشط الآن:**\n\nالرجاء كتابة اسم الدولة (مثال: اليمن)، اسم العملة (مثال: Euro)، أو رمزها (مثال: USD):", parse_mode="Markdown")
-        # البوت سينتظر رسالة المستخدم التالية ويمررها لدالة process_search
+        msg = bot.send_message(call.message.chat.id, "🔍 **البحث نشط الآن:**\n\nاكتب اسم الدولة، العملة، أو الرمز (مثلاً: اليمن، يورو، USD):", parse_mode="Markdown")
         bot.register_next_step_handler(msg, process_search)
         return
 
@@ -170,12 +230,42 @@ def callback_query(call):
     back_btn = types.InlineKeyboardButton("⬅️ رجوع", callback_data="main_menu")
     markup.add(back_btn)
     
-    if call.data == "cat_world":
+    if call.data == "local_yemen":
+        text = (
+            "🇾🇪 **أسعار الصرف في السوق المحلي اليمني:**\n\n"
+            "📍 **صنعاء / ذمار:**\n"
+            f"🇺🇸 الدولار: `{local_rates['sanaa_usd']}` ريال\n"
+            f"🇸🇦 السعودي: `{local_rates['sanaa_sar']}` ريال\n\n"
+            "📍 **عدن والمحافظات المجاورة:**\n"
+            f"🇺🇸 الدولار: `{local_rates['aden_usd']}` ريال\n"
+            f"🇸🇦 السعودي: `{local_rates['aden_sar']}` ريال\n\n"
+            "💡 _يتم تحديث الأسعار يومياً بحسب حركة السوق الفعلي._"
+        )
+    elif call.data == "crypto_prices":
+        bnb = get_crypto_price("BNBUSDT")
+        btc = get_crypto_price("BTCUSDT")
+        
+        bnb_str = f"{bnb:.2f} $" if bnb else "غير متوفر"
+        btc_str = f"{btc:.2f} $" if btc else "غير متوفر"
+        
+        # احتساب القيمة التقديرية للـ USDT مقابل الريال اليمني
+        usdt_sanaa = local_rates['sanaa_usd']
+        usdt_aden = local_rates['aden_usd']
+        
+        text = (
+            "💎 **أسعار العملات الرقمية لحظياً (Binance):**\n\n"
+            f"🟡 **BNB:** `{bnb_str}`\n"
+            f"🟠 **BTC:** `{btc_str}`\n\n"
+            "🔄 **سعر صرف الـ USDT التقريبي محلياً:**\n"
+            f"• صنعاء / ذمار: ~`{usdt_sanaa}` ريال\n"
+            f"• عدن: ~`{usdt_aden}` ريال"
+        )
+    elif call.data == "cat_world":
         text = "🌍 **أهم العملات العالمية:**\n🇺🇸 أمريكا: USD\n🇪🇺 أوروبا: EUR\n🇬🇧 بريطانيا: GBP\n🇨🇭 سويسرا: CHF\n🇯🇵 اليابان: JPY\n🇨🇳 الصين: CNY\n🇷🇺 روسيا: RUB"
     elif call.data == "cat_arab":
         text = "🦅 **الدول العربية:**\n🇸🇦 السعودية: SAR\n🇦🇪 الإمارات: AED\n🇰🇼 الكويت: KWD\n🇶🇦 قطر: QAR\n🇴🇲 عُمان: OMR\n🇾🇪 اليمن: YER\n🇪🇬 مصر: EGP\n🇯🇴 الأردن: JOD\n🇮🇶 العراق: IQD\n🇸🇾 سوريا: SYP\n🇱🇧 لبنان: LBP\n🇲🇦 المغرب: MAD\n🇩🇿 الجزائر: DZD"
     elif call.data == "cat_asia":
-        text = "🌏 **آسيا (تشمل الوسطى):**\n🇺🇿 أوزبكستان: UZS\n🇰🇿 كازاخستان: KZT\n🇹🇯 طاجيكستان: TJS\n🇮🇳 الهند: INR\n🇧🇩 بنغلاديش: BDT\n🇵🇰 باكستان: PKR\n🇹🇷 تركيا: TRY\n🇲🇾 ماليزيا: MYR\n🇮🇩 إندونيسيا: IDR"
+        text = "🌏 **آسيا:**\n🇺🇿 أوزبكستان: UZS\n🇰🇿 كازاخستان: KZT\n🇹🇯 طاجيكستان: TJS\n🇮🇳 الهند: INR\n🇧🇩 بنغلاديش: BDT\n🇵🇰 باكستان: PKR\n🇹🇷 تركيا: TRY\n🇲🇾 ماليزيا: MYR\n🇮🇩 إندونيسيا: IDR"
     elif call.data == "cat_europe":
         text = "💶 **أوروبا:**\n🇪🇺 دول اليورو: EUR\n🇬🇧 بريطانيا: GBP\n🇨🇭 سويسرا: CHF\n🇵🇱 بولندا: PLN\n🇸🇪 السويد: SEK\n🇩🇰 الدنمارك: DKK"
     elif call.data == "cat_africa":
@@ -188,27 +278,25 @@ def callback_query(call):
 
     bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=markup, parse_mode="Markdown")
 
-# دالة البحث (تتفعل فقط بعد ضغط زر البحث)
 def process_search(message):
     query = message.text.lower()
-    
-    # البحث داخل قاعدة البيانات عن أي تطابق
     results = [line for line in currency_search_db if query in line.lower()]
     
     if results:
-        response_text = "✅ **نتائج البحث:**\n\n" + "\n\n".join(results) + "\n\n💡 _يمكنك الآن استخدام الرمز (مثال: USD) للتحويل._"
+        response_text = "✅ **نتائج البحث:**\n\n" + "\n\n".join(results) + "\n\n💡 _استخدم الرمز (مثال: USD) للتحويل._"
         bot.send_message(message.chat.id, response_text, parse_mode="Markdown")
     else:
-        bot.send_message(message.chat.id, "❌ لم أتمكن من العثور على الدولة أو العملة. حاول كتابة الاسم بطريقة مختلفة (مثلاً 'امريكا' بدلاً من 'الولايات المتحدة').")
+        bot.send_message(message.chat.id, "❌ لم يتم العثور على نتائج. جرب كلمة أخرى.")
 
 # ==========================================
-# 6. معالجة رسائل التحويل
+# 8. معالجة رسائل التحويل النصية
 # ==========================================
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     text = message.text
     text_upper = text.upper().split()
     
+    # تحويل بالصيغة الإنجليزية: 100 USD TO EUR
     if len(text_upper) == 4 and text_upper[2] == "TO":
         try:
             amount = float(text_upper[0])
@@ -224,6 +312,7 @@ def handle_message(message):
         except ValueError:
             pass 
 
+    # تحويل بالصيغة العربية
     base_curr, target_curr = extract_currencies_from_arabic(text)
     if base_curr and target_curr:
         rate = get_exchange_rate(base_curr, target_curr)
@@ -232,7 +321,7 @@ def handle_message(message):
         else:
             bot.reply_to(message, "❌ عذراً، لم أتمكن من جلب السعر حالياً.")
     else:
-        bot.reply_to(message, "🤔 عذراً، لم أفهم. جرب: 'كم سعر الدولار مقابل السوم الاوزبكي؟' أو اضغط /currencies للبحث عن الرموز.")
+        bot.reply_to(message, "🤔 عذراً، لم أفهم. جرب: 'كم سعر الدولار مقابل السوم الاوزبكي؟' أو أرسل /currencies.")
 
-print("🤖 البوت يعمل الآن (وميزة البحث مفعلة)... اضغط Ctrl+C لإيقافه.")
+print("🤖 البوت يعمل بكامل الميزات الجديدة...")
 bot.polling(none_stop=True)
