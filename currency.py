@@ -1,7 +1,6 @@
 import telebot
 from telebot import types
 import requests
-import os
 
 # التوكن الخاص بك
 TOKEN = '8963858897:AAE8SRUCJhTvlTj5_Lxz6RHncIMM5IxbDIQ'
