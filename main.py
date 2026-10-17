@@ -2,6 +2,7 @@ import os
 import telebot
 from telebot import types
 import requests
+import re  # مكتبة جديدة لاستخراج الأرقام من النصوص العربية
 
 # ==========================================
 # 0. الإعدادات والتوكن والمدير
@@ -9,10 +10,8 @@ import requests
 TOKEN = os.getenv("BOT_TOKEN", "8963858897:AAE8SRUCJhTvlTj5_Lxz6RHncIMM5IxbDIQ")
 bot = telebot.TeleBot(TOKEN)
 
-# معرّف الإدارة الخاص بك
 ADMIN_ID = "320878111"
 
-# أسعار السوق المحلي الافتراضية
 local_rates = {
     "sanaa_usd": 530.0,
     "sanaa_sar": 140.0,
@@ -21,45 +20,45 @@ local_rates = {
 }
 
 # ==========================================
-# 1. القاموس للتعرف على الأسئلة العربية
+# 1. القاموس الذكي (يشمل أسماء الدول والكلمات العامية)
 # ==========================================
 currencies_ar = {
-    "الدولار": "USD", "دولار": "USD", "الأمريكي": "USD",
-    "اليورو": "EUR", "يورو": "EUR",
-    "الجنيه الاسترليني": "GBP", "استرليني": "GBP",
-    "الين الياباني": "JPY", "الين": "JPY",
-    "اليوان الصيني": "CNY", "يوان": "CNY",
-    "الروبل الروسي": "RUB", "روبل": "RUB",
-    "الريال السعودي": "SAR", "ريال سعودي": "SAR",
-    "الدرهم الاماراتي": "AED", "درهم اماراتي": "AED",
-    "الدينار الكويتي": "KWD", "دينار كويتي": "KWD",
-    "الريال القطري": "QAR", "ريال قطري": "QAR",
-    "الريال العماني": "OMR", "ريال عماني": "OMR",
-    "الدينار البحريني": "BHD", "دينار بحريني": "BHD",
-    "الريال اليمني": "YER", "ريال يمني": "YER",
-    "الجنيه المصري": "EGP", "جنيه مصري": "EGP",
-    "الدينار الاردني": "JOD", "دينار اردني": "JOD",
-    "الشيكل": "ILS", "شيكل": "ILS", "الشيكل الفلسطيني": "ILS", "شيكل فلسطيني": "ILS",
-    "الليرة اللبنانية": "LBP", "ليرة لبنانية": "LBP",
-    "الليرة السورية": "SYP", "ليرة سورية": "SYP",
-    "الدينار العراقي": "IQD", "دينار عراقي": "IQD",
-    "الدرهم المغربي": "MAD", "درهم مغربي": "MAD",
-    "الدينار الجزائري": "DZD", "دينار جزائري": "DZD",
-    "الدينار التونسي": "TND", "دينار تونسي": "TND",
-    "الدينار الليبي": "LYD", "دينار ليبي": "LYD",
-    "الجنيه السوداني": "SDG", "جنيه سوداني": "SDG",
-    "السوم الاوزبكي": "UZS", "سوم اوزبكي": "UZS", "اوزبكي": "UZS",
-    "التنج الكازاخستاني": "KZT", "تنج كازاخستاني": "KZT",
-    "السوموني الطاجيكي": "TJS", "طاجيكي": "TJS",
-    "الروبيه الهنديه": "INR", "روبيه هندية": "INR", "روبيه": "INR",
-    "التاكا البنجلاديشي": "BDT", "تاكا بنجلاديشي": "BDT", "تاكا": "BDT",
-    "الليرة التركية": "TRY", "ليرة تركية": "TRY",
-    "البيزو المكسيكي": "MXN", "بيزو مكسيكي": "MXN",
-    "الريال البرازيلي": "BRL", "ريال برازيلي": "BRL"
+    "الدولار": "USD", "دولار": "USD", "الأمريكي": "USD", "الامريكي": "USD", "امريكي": "USD", "امريكا": "USD", "أمريكا": "USD",
+    "اليورو": "EUR", "يورو": "EUR", "اوروبا": "EUR", "أوروبا": "EUR",
+    "الجنيه الاسترليني": "GBP", "استرليني": "GBP", "البريطاني": "GBP", "بريطاني": "GBP", "بريطانيا": "GBP",
+    "الين الياباني": "JPY", "الين": "JPY", "الياباني": "JPY", "ياباني": "JPY", "اليابان": "JPY",
+    "اليوان الصيني": "CNY", "يوان": "CNY", "الصيني": "CNY", "صيني": "CNY", "الصين": "CNY",
+    "الروبل الروسي": "RUB", "روبل": "RUB", "الروسي": "RUB", "روسي": "RUB", "روسيا": "RUB",
+    "الريال السعودي": "SAR", "ريال سعودي": "SAR", "السعودي": "SAR", "سعودي": "SAR", "السعودية": "SAR", "سعودية": "SAR",
+    "الدرهم الاماراتي": "AED", "درهم اماراتي": "AED", "الاماراتي": "AED", "اماراتي": "AED", "الامارات": "AED", "الإمارات": "AED",
+    "الدينار الكويتي": "KWD", "دينار كويتي": "KWD", "الكويتي": "KWD", "كويتي": "KWD", "الكويت": "KWD",
+    "الريال القطري": "QAR", "ريال قطري": "QAR", "القطري": "QAR", "قطري": "QAR", "قطر": "QAR",
+    "الريال العماني": "OMR", "ريال عماني": "OMR", "العماني": "OMR", "عماني": "OMR", "عمان": "OMR", "عُمان": "OMR",
+    "الدينار البحريني": "BHD", "دينار بحريني": "BHD", "البحريني": "BHD", "بحريني": "BHD", "البحرين": "BHD",
+    "الريال اليمني": "YER", "ريال يمني": "YER", "اليمني": "YER", "يمني": "YER", "اليمن": "YER", "يمن": "YER",
+    "الجنيه المصري": "EGP", "جنيه مصري": "EGP", "المصري": "EGP", "مصري": "EGP", "مصر": "EGP",
+    "الدينار الاردني": "JOD", "دينار اردني": "JOD", "الاردني": "JOD", "اردني": "JOD", "الاردن": "JOD", "الأردن": "JOD",
+    "الشيكل": "ILS", "شيكل": "ILS", "الشيكل الفلسطيني": "ILS", "شيكل فلسطيني": "ILS", "فلسطين": "ILS", "الفلسطيني": "ILS", "فلسطيني": "ILS",
+    "الليرة اللبنانية": "LBP", "ليرة لبنانية": "LBP", "اللبناني": "LBP", "لبناني": "LBP", "لبنان": "LBP",
+    "الليرة السورية": "SYP", "ليرة سورية": "SYP", "السوري": "SYP", "سوري": "SYP", "سوريا": "SYP",
+    "الدينار العراقي": "IQD", "دينار عراقي": "IQD", "العراقي": "IQD", "عراقي": "IQD", "العراق": "IQD",
+    "الدرهم المغربي": "MAD", "درهم مغربي": "MAD", "المغربي": "MAD", "مغربي": "MAD", "المغرب": "MAD",
+    "الدينار الجزائري": "DZD", "دينار جزائري": "DZD", "الجزائري": "DZD", "جزائري": "DZD", "الجزائر": "DZD",
+    "الدينار التونسي": "TND", "دينار تونسي": "TND", "التونسي": "TND", "تونسي": "TND", "تونس": "TND",
+    "الدينار الليبي": "LYD", "دينار ليبي": "LYD", "الليبي": "LYD", "ليبي": "LYD", "ليبيا": "LYD",
+    "الجنيه السوداني": "SDG", "جنيه سوداني": "SDG", "السوداني": "SDG", "سوداني": "SDG", "السودان": "SDG",
+    "السوم الاوزبكي": "UZS", "سوم اوزبكي": "UZS", "اوزبكي": "UZS", "اوزبكستان": "UZS",
+    "التنج الكازاخستاني": "KZT", "تنج كازاخستاني": "KZT", "كازاخستان": "KZT",
+    "السوموني الطاجيكي": "TJS", "طاجيكي": "TJS", "طاجيكستان": "TJS",
+    "الروبيه الهنديه": "INR", "روبيه هندية": "INR", "روبيه": "INR", "الهندي": "INR", "هندي": "INR", "الهند": "INR",
+    "التاكا البنجلاديشي": "BDT", "تاكا بنجلاديشي": "BDT", "تاكا": "BDT", "بنجلاديش": "BDT",
+    "الليرة التركية": "TRY", "ليرة تركية": "TRY", "التركي": "TRY", "تركي": "TRY", "تركيا": "TRY",
+    "البيزو المكسيكي": "MXN", "بيزو مكسيكي": "MXN", "المكسيك": "MXN",
+    "الريال البرازيلي": "BRL", "ريال برازيلي": "BRL", "البرازيل": "BRL"
 }
 
 # ==========================================
-# 2. قاعدة بيانات البحث
+# 2. قاعدة بيانات البحث (مخفية للاختصار لكنها موجودة كما هي)
 # ==========================================
 currency_search_db = [
     "🇺🇸 الولايات المتحدة (USA) | الدولار الأمريكي (Dollar) | الرمز: USD",
@@ -106,7 +105,7 @@ currency_search_db = [
 ]
 
 # ==========================================
-# 3. دوال جلب الأسعار والتعرف على النص
+# 3. دوال جلب الأسعار والمحلل اللغوي الذكي (جديد)
 # ==========================================
 def get_exchange_rate(base_currency, target_currency):
     try:
@@ -120,13 +119,11 @@ def get_exchange_rate(base_currency, target_currency):
         return None
 
 def get_crypto_price(symbol):
-    # قائمة بروابط باينانس لتخطي حظر السيرفرات (عالمي، أمريكي، وبديل)
     urls = [
         f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}",
         f"https://api.binance.us/api/v3/ticker/price?symbol={symbol}",
         f"https://api1.binance.com/api/v3/ticker/price?symbol={symbol}"
     ]
-    
     for url in urls:
         try:
             response = requests.get(url, timeout=7)
@@ -136,28 +133,51 @@ def get_crypto_price(symbol):
             continue
     return None
 
-def extract_currencies_from_arabic(text):
-    found_currencies = []
+def extract_info_from_arabic(text):
+    """
+    محلل لغوي يستخرج: الرقم (المبلغ) + العملة الأساسية + العملة المحول إليها 
+    بناءً على الترتيب الفعلي للكلمات في الجملة.
+    """
+    amount = 1.0
+    # 1. استخراج الأرقام من الجملة (مثل 500 أو 15.5)
+    numbers = re.findall(r'\d+(?:\.\d+)?', text)
+    if numbers:
+        amount = float(numbers[0])
+
+    # 2. البحث عن العملات وتحديد موقعها في الجملة
+    found_items = []
     sorted_keys = sorted(currencies_ar.keys(), key=len, reverse=True)
+    temp_text = text
+    
     for key in sorted_keys:
-        if key in text:
-            found_currencies.append(currencies_ar[key])
-            text = text.replace(key, "") 
+        if key in temp_text:
+            index = temp_text.find(key)
+            found_items.append((index, currencies_ar[key]))
+            temp_text = temp_text.replace(key, " " * len(key))
             
-    # إذا حدد المستخدم عملتين
-    if len(found_currencies) >= 2:
-        return found_currencies[0], found_currencies[1]
-        
-    # إذا سأل عن عملة واحدة نفترض أنه يقصد الريال اليمني
-    elif len(found_currencies) == 1:
-        if found_currencies[0] == "YER":
-            return None, None
-        return found_currencies[0], "YER"
-        
-    return None, None
+    # 3. ترتيب العملات بناءً على موقع ظهورها في الكلام (من اليمين لليسار)
+    found_items.sort(key=lambda x: x[0])
+    found_currencies = [item[1] for item in found_items]
+    
+    # 4. إزالة التكرار (في حال قال: ريال سعودي السعودية)
+    unique_currencies = []
+    for curr in found_currencies:
+        if not unique_currencies or unique_currencies[-1] != curr:
+            unique_currencies.append(curr)
+            
+    base_curr, target_curr = None, None
+    if len(unique_currencies) >= 2:
+        base_curr = unique_currencies[0]
+        target_curr = unique_currencies[1]
+    elif len(unique_currencies) == 1:
+        if unique_currencies[0] != "YER":
+            base_curr = unique_currencies[0]
+            target_curr = "YER"
+            
+    return amount, base_curr, target_curr
 
 def handle_local_yemen_conversion(amount, base, target):
-    """دالة لحساب التحويل بناءً على السوق المحلي اليمني فقط"""
+    """حساب التحويل بناءً على السوق المحلي اليمني فقط"""
     if target == "YER":
         if base == "USD":
             return amount * local_rates['sanaa_usd'], amount * local_rates['aden_usd']
@@ -192,11 +212,10 @@ def handle_local_yemen_conversion(amount, base, target):
 def send_welcome(message):
     text = (
         "مرحباً بك في بوت الصرف والعملات! 💱\n\n"
-        "🔹 **أسعار السوق المحلي المباشرة:**\n"
-        "اكتب اسم العملة فقط (مثال: `الدولار`، `بكم السعودي؟`، `كم سعر الشيكل؟`)\n\n"
-        "🔹 **التحويل المباشر:**\n"
-        "• إنجليزي: `100 USD TO YER`\n"
-        "• إنجليزي: `50 EUR TO SAR`\n\n"
+        "🔹 **التحويل الذكي المباشر:**\n"
+        "• اكتب ببساطة: `500 دولار كم سعودي`\n"
+        "• أو: `كم سعر اليورو مقابل الكويتي`\n"
+        "• أو اسم الدولة فقط: `بريطانيا`\n\n"
         "🔹 **القوائم والأسواق:**\n"
         "اضغط على /currencies لعرض أسعار السوق المحلي، الكريبتو، والقوائم."
     )
@@ -332,6 +351,7 @@ def handle_message(message):
     text = message.text
     text_upper = text.upper().split()
     
+    # التحويل بالطريقة الإنجليزية الصريحة
     if len(text_upper) == 4 and text_upper[2] == "TO":
         try:
             amount = float(text_upper[0])
@@ -356,24 +376,28 @@ def handle_message(message):
         except ValueError:
             pass 
 
-    base_curr, target_curr = extract_currencies_from_arabic(text)
+    # التحويل الذكي للغة العربية
+    amount, base_curr, target_curr = extract_info_from_arabic(text)
+    
     if base_curr and target_curr:
-        
+        # إذا كان التحويل يخص اليمن محلياً
         if base_curr == "YER" or target_curr == "YER":
-            sanaa_val, aden_val = handle_local_yemen_conversion(1, base_curr, target_curr)
+            sanaa_val, aden_val = handle_local_yemen_conversion(amount, base_curr, target_curr)
             if sanaa_val and aden_val:
-                bot.reply_to(message, f"🇾🇪 **السعر المباشر (سوق محلي):**\n\n1 {base_curr} =\n📍 **صنعاء/ذمار:** `{sanaa_val:,.2f}` {target_curr}\n📍 **عدن/الجنوب:** `{aden_val:,.2f}` {target_curr}", parse_mode="Markdown")
+                bot.reply_to(message, f"🇾🇪 **السعر المباشر (سوق محلي):**\n\n{amount:,.2f} {base_curr} =\n📍 **صنعاء/ذمار:** `{sanaa_val:,.2f}` {target_curr}\n📍 **عدن/الجنوب:** `{aden_val:,.2f}` {target_curr}", parse_mode="Markdown")
             else:
                 bot.reply_to(message, "❌ عذراً، حدث خطأ في حساب السعر المحلي.")
         
+        # تحويل بين أي دولتين في العالم
         else:
             rate = get_exchange_rate(base_curr, target_curr)
             if rate:
-                bot.reply_to(message, f"🌍 السعر المباشر (عالمي):\n1 {base_curr} = `{rate:,.2f}` {target_curr}", parse_mode="Markdown")
+                result = amount * rate
+                bot.reply_to(message, f"🌍 السعر المباشر (عالمي):\n{amount:,.2f} {base_curr} = `{result:,.2f}` {target_curr}", parse_mode="Markdown")
             else:
                 bot.reply_to(message, "❌ عذراً، لم أتمكن من جلب السعر حالياً.")
     else:
-        bot.reply_to(message, "🤔 عذراً، لم أفهم. جرب: 'كم سعر الدولار؟' أو أرسل /currencies.")
+        bot.reply_to(message, "🤔 عذراً، لم أفهم. جرب:\n- `كم سعر الدولار مقابل السعودي`\n- `500 يورو كم تساوي بالاماراتي`")
 
-print("🤖 البوت يعمل بكامل الميزات الجديدة بما فيها أسعار الكريبتو...")
+print("🤖 البوت يعمل بكامل الميزات ويدعم الذكاء اللغوي الآن...")
 bot.polling(none_stop=True)
